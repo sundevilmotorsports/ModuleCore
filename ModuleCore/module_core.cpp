@@ -41,38 +41,34 @@ esp_err_t ModuleCore::init(const ModuleInfo &info, const Config &cfg) {
 
     can_queue_ = xQueueCreate(16, sizeof(CanFrame));
 
-    twai_onchip_node_config_t node_cfg = {};
-    node_cfg.io_cfg.tx                = cfg.can_tx;
-    node_cfg.io_cfg.rx                = cfg.can_rx;
-    node_cfg.io_cfg.quanta_clk_out    = GPIO_NUM_NC;
-    node_cfg.io_cfg.bus_off_indicator = GPIO_NUM_NC;
-    node_cfg.bit_timing               = cfg.can_timing;
-    node_cfg.fail_retry_cnt           = 3;
-    node_cfg.tx_queue_depth           = 16;
-
-    ESP_RETURN_ON_ERROR(twai_new_node_onchip(&node_cfg, &twai_hdl_),
-                        TAG, "TWAI init failed");
-
-    twai_event_callbacks_t cbs = {};
-    cbs.on_rx_done = onCanRx;
-    ESP_RETURN_ON_ERROR(twai_node_register_event_callbacks(twai_hdl_, &cbs, this),
-                        TAG, "TWAI cb register failed");
-
-    ESP_RETURN_ON_ERROR(twai_node_enable(twai_hdl_), TAG, "TWAI enable failed");
-
-    for (int i = 0; i < 4; i++) {
-        gpio_set_level(info_.blink_pin, i % 2);
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-    can_queue_ = xQueueCreate(16, sizeof(CanFrame));
-    spawnTask<&ModuleCore::canProcessTask>("can_proc", 4096, 6);
-    xTaskCreate(uartRxTask, "uart_rx", 4096, this, 5, nullptr);
+    // twai_onchip_node_config_t node_cfg = {};
+    // node_cfg.io_cfg.tx                = cfg.can_tx;
+    // node_cfg.io_cfg.rx                = cfg.can_rx;
+    // node_cfg.io_cfg.quanta_clk_out    = GPIO_NUM_NC;
+    // node_cfg.io_cfg.bus_off_indicator = GPIO_NUM_NC;
+    // node_cfg.bit_timing               = cfg.can_timing;
+    // node_cfg.fail_retry_cnt           = 3;
+    // node_cfg.tx_queue_depth           = 16;
+    //
+    // ESP_RETURN_ON_ERROR(twai_new_node_onchip(&node_cfg, &twai_hdl_),
+    //                     TAG, "TWAI init failed");
+    //
+    // twai_event_callbacks_t cbs = {};
+    // cbs.on_rx_done = onCanRxStatic;
+    // ESP_RETURN_ON_ERROR(twai_node_register_event_callbacks(twai_hdl_, &cbs, this),
+    //                     TAG, "TWAI cb register failed");
+    //
+    //
+    // ESP_RETURN_ON_ERROR(twai_node_enable(twai_hdl_), TAG, "TWAI enable failed");
+    //
+    //
+    // spawnTask<&ModuleCore::canProcessTask>("can_proc", 4096, 6);
+    xTaskCreate(uartRxTaskEntry, "uart_rx", 4096, this, 5, nullptr);
 
     return ESP_OK;
 }
 
-bool ModuleCore::onCanRx(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *ctx) {
+bool ModuleCore::onCanRxStatic(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *ctx) {
     auto *self = static_cast<ModuleCore*>(ctx);
 
     uint8_t recv_buff[8];
@@ -150,12 +146,12 @@ bool ModuleCore::handleCan(const CanFrame *frame) {
     return false;
 }
 
-void ModuleCore::uartRxTask(void *arg) {
-    static_cast<ModuleCore*>(arg)->uartRxTask();
+void ModuleCore::uartRxTaskEntry(void *arg) {
+    static_cast<ModuleCore*>(arg)->uartRxLoop();
     vTaskDelete(nullptr);
 }
 
-void ModuleCore::uartRxTask() {
+void ModuleCore::uartRxLoop() {
     uint8_t buf[256];
     while (true) {
         int len = uart_read_bytes(uart_port_, buf, sizeof(buf), pdMS_TO_TICKS(50));

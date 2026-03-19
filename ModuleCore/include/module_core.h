@@ -94,10 +94,10 @@ private:
     void identifyTask();
     void discoveryTask();
     void canProcessTask();
-    void uartRxTask();
+    void uartRxLoop();
 
-    static bool onCanRx(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *ctx);
-    static void uartRxTask(void *arg);
+    static bool onCanRxStatic(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *ctx);
+    static void uartRxTaskEntry(void *arg);
 
     twai_node_handle_t twai_hdl_        = nullptr;
     uart_port_t        uart_port_        = UART_NUM_0;

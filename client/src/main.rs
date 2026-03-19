@@ -9,7 +9,8 @@ const CMD_SET_ID: u8 = 0x02;
 const CMD_DISCOVER: u8 = 0x04;
 
 // Message types
-const MSG_DISCOVERY: u8 = 0x02;
+const MSG_RESPONSE: u8 = 0x10;
+const MSG_DISCOVERY: u8 = 0x11;
 
 const CMD_ARRAY: [u8; 3] = [CMD_IDENTIFY, CMD_SET_ID, CMD_DISCOVER];
 
@@ -59,27 +60,21 @@ impl DeviceManagerClient {
     fn read_response(&mut self) -> io::Result<Option<UartResponse>> {
         let mut buffer = [0u8; 256];
         match self.port.read(&mut buffer) {
-            Ok(n) if n > 0 => {
-                if n >= 2 {
-                    if CMD_ARRAY.contains(&buffer[0]) {
-                        Ok(Some(UartResponse {
-                            msg_type: buffer[0],
-                            source_device: buffer[1],
-                            data: buffer[2..n].to_vec(),
-                        }))
-                    } else {
-                        Ok(None)
-                    }
+            Ok(n) if n >= 2 => {
+                let msg_type = buffer[0];
+                if msg_type == MSG_RESPONSE || msg_type == MSG_DISCOVERY {
+                    Ok(Some(UartResponse {
+                        msg_type: buffer[0],
+                        source_device: buffer[1],
+                        data: buffer[2..n].to_vec(),
+                    }))
                 } else {
                     Ok(None)
                 }
             }
             Ok(_) => Ok(None),
             Err(ref e) if e.kind() == io::ErrorKind::TimedOut => Ok(None),
-            Err(e) => {
-                error!("Read error: {:?}", e);
-                Err(e)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -152,6 +147,8 @@ fn read_input() -> String {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
