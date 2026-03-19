@@ -65,6 +65,8 @@ esp_err_t ModuleCore::init(const ModuleInfo &info, const Config &cfg) {
     // spawnTask<&ModuleCore::canProcessTask>("can_proc", 4096, 6);
     xTaskCreate(uartRxTaskEntry, "uart_rx", 4096, this, 5, nullptr);
 
+    ESP_LOGI(TAG, "Ready — CAN ID: 0x%02X", this->getId());
+
     if (cfg_.app_main) {
         spawnTask<&ModuleCore::appSupervisorTask>("app_sup", 8192, 5);
     } else {

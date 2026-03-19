@@ -60,7 +60,7 @@ public:
     ~ModuleCore();
 
     esp_err_t init(const ModuleInfo &info, const Config &cfg);
-    uint8_t   getId() const { return can_id_; }
+    esp_err_t sendCanFrame(uint32_t can_id, const uint8_t *data, size_t len);
 
 private:
     struct UartMessage {
@@ -88,11 +88,11 @@ private:
     esp_err_t handleUart(const uint8_t *data, size_t len);
     bool      handleCan(const CanFrame *frame);
     esp_err_t sendUartResponse(const UartResponse &resp);
-    esp_err_t sendCanFrame(uint32_t can_id, const uint8_t *data, size_t len);
     esp_err_t setId(uint8_t id);
     esp_err_t startDiscovery();
     void      identify();
     uint8_t   loadId();
+    uint8_t   getId() const { return can_id_; }
 
     void identifyTask();
     void discoveryTask();
