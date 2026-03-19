@@ -65,6 +65,13 @@ esp_err_t ModuleCore::init(const ModuleInfo &info, const Config &cfg) {
     // spawnTask<&ModuleCore::canProcessTask>("can_proc", 4096, 6);
     xTaskCreate(uartRxTaskEntry, "uart_rx", 4096, this, 5, nullptr);
 
+    if (cfg_.app_main) {
+        spawnTask<&ModuleCore::appSupervisorTask>("app_sup", 8192, 5);
+    } else {
+        ESP_LOGE(TAG, "No app_main provided");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
     return ESP_OK;
 }
 
@@ -284,4 +291,26 @@ uint8_t ModuleCore::loadId() {
     nvs_get_u8(handle, CAN_NVS_KEY, &id);
     nvs_close(handle);
     return id;
+}
+
+void ModuleCore::appSupervisorTask() {
+    constexpr TickType_t kRestartBackoff = pdMS_TO_TICKS(250);
+
+    for (;;) {
+        esp_err_t result = ESP_OK;
+        auto res = cfg_.app_main();
+        if (!res.has_value()) {
+            result = res.error();
+        }
+
+        if (result == ESP_OK) {
+            ESP_LOGI(TAG, "app_main exited with OK, restarting");
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
+        ESP_LOGE(TAG, "app_main failed (err=%s), restarting", esp_err_to_name(result));
+
+        vTaskDelay(kRestartBackoff);
+    }
 }
