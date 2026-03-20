@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <expected>
+#include "error.h"
 
 #define CAN_NVS_KEY   "can_id"
 #define CAN_ID_UNSET  0xFF
@@ -53,7 +54,7 @@ public:
         std::function<void(const CanFrame*)>        on_can_rx  = nullptr;
         std::function<void(const uint8_t*, size_t)> on_uart_rx = nullptr;
 
-        std::function<std::expected<void, esp_err_t>()> app_main = nullptr;
+        std::function<std::expected<void, ModuleCoreError>()> app_main = nullptr;
     };
 
     ModuleCore() = default;
@@ -99,14 +100,12 @@ private:
     void canProcessTask();
     void uartRxLoop();
 
-    // Supervisor task that runs the module-specific app_main. If app_main returns an error
-    // or throws, the supervisor will report the error and restart it.
     void appSupervisorTask();
 
     static bool onCanRxStatic(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *ctx);
     static void uartRxTaskEntry(void *arg);
 
-    twai_node_handle_t twai_hdl_        = nullptr;
+    twai_node_handle_t twai_hdl_         = nullptr;
     uart_port_t        uart_port_        = UART_NUM_0;
     ModuleInfo         info_             = {};
     Config             cfg_              = {};

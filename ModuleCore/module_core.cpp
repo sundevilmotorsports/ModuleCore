@@ -299,19 +299,14 @@ void ModuleCore::appSupervisorTask() {
     constexpr TickType_t kRestartBackoff = pdMS_TO_TICKS(250);
 
     for (;;) {
-        esp_err_t result = ESP_OK;
         auto res = cfg_.app_main();
-        if (!res.has_value()) {
-            result = res.error();
-        }
-
-        if (result == ESP_OK) {
+        if (res.has_value()) {
             ESP_LOGI(TAG, "app_main exited with OK, restarting");
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
 
-        ESP_LOGE(TAG, "app_main failed (err=%s), restarting", esp_err_to_name(result));
+        ESP_LOGE(TAG, "app_main failed (err=%s), restarting", res.error().get_message());
 
         vTaskDelay(kRestartBackoff);
     }
