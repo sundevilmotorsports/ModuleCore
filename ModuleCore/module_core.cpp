@@ -201,6 +201,8 @@ bool ModuleCore::handleCan(const CanFrame *frame) {
             case CMD_OTA_END:
                 otaEnd(frame->len >= 2 && frame->data[1] == 0x00);
                 return true;
+            case CMD_DATA:
+                return false;
             default:
                 break;
         }
@@ -354,6 +356,21 @@ esp_err_t ModuleCore::sendUartResponse(const UartResponse &resp) {
 esp_err_t ModuleCore::sendCanFrame(uint32_t can_id, const uint8_t *data, size_t len) {
     uint8_t tx_buff[8];
     memcpy(tx_buff, data, len);
+
+    twai_frame_t frame = {};
+    frame.header.id  = can_id;
+    frame.header.ide = (can_id > 0x7FF) ? 1 : 0;
+    frame.header.dlc = len;
+    frame.buffer     = tx_buff;
+    frame.buffer_len = sizeof(tx_buff);
+
+    return twai_node_transmit(twai_hdl_, &frame, pdMS_TO_TICKS(100));
+}
+
+esp_err_t ModuleCore::transmitCan(uint32_t can_id, const uint8_t *data, size_t len) {
+    uint8_t tx_buff[8];
+    tx_buff[0] = CMD_DATA;
+    memcpy(&tx_buff[1], data, len);
 
     twai_frame_t frame = {};
     frame.header.id  = can_id;

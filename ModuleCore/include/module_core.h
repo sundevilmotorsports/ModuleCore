@@ -29,6 +29,7 @@ enum Command : uint8_t {
     CMD_OTA_BEGIN = 0x05,
     CMD_OTA_DATA  = 0x06,
     CMD_OTA_END   = 0x07,
+    CMD_DATA      = 0x08,
 };
 
 enum MsgType : uint8_t {
@@ -68,7 +69,7 @@ public:
     ~ModuleCore();
 
     esp_err_t init(const ModuleInfo &info, const Config &cfg);
-    esp_err_t sendCanFrame(uint32_t can_id, const uint8_t *data, size_t len);
+    esp_err_t transmitCan(uint32_t can_id, const uint8_t *data, size_t len);
 
 private:
     struct UartMessage {
@@ -101,6 +102,7 @@ private:
         }, name, stack, this, prio, nullptr);
     }
 
+    esp_err_t sendCanFrame(uint32_t can_id, const uint8_t *data, size_t len);
     esp_err_t handleUart(const uint8_t *data, size_t len);
     bool      handleCan(const CanFrame *frame);
     esp_err_t sendUartResponse(const UartResponse &resp);
@@ -110,7 +112,6 @@ private:
     uint8_t   loadId();
     uint8_t   getId() const { return can_id_; }
 
-    // OTA helpers
     esp_err_t otaBegin(uint32_t total_size);
     esp_err_t otaWrite(const uint8_t *data, size_t len, uint16_t seq, uint8_t src_id);
     esp_err_t otaEnd(bool commit);
