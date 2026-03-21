@@ -4,6 +4,7 @@
 #include "esp_twai.h"
 #include "esp_twai_types.h"
 #include "esp_twai_onchip.h"
+#include "esp_ota_ops.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -18,16 +19,22 @@
 #define CAN_ID_UNSET  0xFF
 #define CAN_BROADCAST 0x7FF
 
+#define OTA_CAN_CHUNK 5
+
 enum Command : uint8_t {
-    CMD_IDENTIFY = 0x01,
-    CMD_SET_ID   = 0x02,
-    CMD_GET_INFO = 0x03,
-    CMD_DISCOVER = 0x04,
+    CMD_IDENTIFY  = 0x01,
+    CMD_SET_ID    = 0x02,
+    CMD_GET_INFO  = 0x03,
+    CMD_DISCOVER  = 0x04,
+    CMD_OTA_BEGIN = 0x05,
+    CMD_OTA_DATA  = 0x06,
+    CMD_OTA_END   = 0x07,
 };
 
 enum MsgType : uint8_t {
     MSG_RESPONSE  = 0x10,
     MSG_DISCOVERY = 0x11,
+    MSG_OTA_ACK   = 0x12,
 };
 
 struct ModuleInfo {
@@ -78,6 +85,14 @@ private:
         size_t  data_len;
     };
 
+    // OTA state — one active session at a time
+    struct OtaState {
+        esp_ota_handle_t handle   = 0;
+        bool             active   = false;
+        uint32_t         expected = 0; // total bytes
+        uint32_t         written  = 0;
+    };
+
     template<void (ModuleCore::*Method)()>
     void spawnTask(const char *name, uint32_t stack, UBaseType_t prio) {
         xTaskCreate([](void *arg) {
@@ -95,6 +110,11 @@ private:
     uint8_t   loadId();
     uint8_t   getId() const { return can_id_; }
 
+    // OTA helpers
+    esp_err_t otaBegin(uint32_t total_size);
+    esp_err_t otaWrite(const uint8_t *data, size_t len, uint16_t seq, uint8_t src_id);
+    esp_err_t otaEnd(bool commit);
+
     void identifyTask();
     void discoveryTask();
     void canProcessTask();
@@ -108,8 +128,9 @@ private:
     twai_node_handle_t twai_hdl_         = nullptr;
     uart_port_t        uart_port_        = UART_NUM_0;
     ModuleInfo         info_             = {};
-    Config             cfg_              = {};
+    Config             cfg_             = {};
     uint8_t            can_id_           = CAN_ID_UNSET;
     bool               discovery_active_ = false;
     QueueHandle_t      can_queue_        = nullptr;
+    OtaState           ota_             = {};
 };
