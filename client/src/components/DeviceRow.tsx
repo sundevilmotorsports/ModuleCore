@@ -11,15 +11,28 @@ export interface Device {
 
 interface DeviceRowProps {
   device: Device
+  onSelect?: (device: Device) => void
+  selected?: boolean
 }
 
-export function DeviceRow({ device }: DeviceRowProps) {
+export function DeviceRow({ device, onSelect, selected = false }: DeviceRowProps) {
   async function handleIdent() {
     await invoke('identify', { canId: device.can_id })
   }
 
+  function handleSelect() {
+    if (onSelect) onSelect(device)
+  }
+
   return (
-    <div className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3 transition-all duration-150 hover:border-border/80">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleSelect}
+      onKeyDown={(e) => { if (e.key === 'Enter') handleSelect() }}
+      className={"flex items-center justify-between rounded-md border px-4 py-3 transition-all duration-150 hover:border-border/80 " + (selected ? 'border-primary bg-muted' : 'border-border bg-card')}
+      style={{ cursor: onSelect ? 'pointer' : 'default' }}
+    >
       <div className="flex items-center gap-6">
         <div className="flex flex-col gap-0.5">
           <span className="text-[9px] font-semibold tracking-[1.5px] text-muted-foreground">
@@ -52,7 +65,7 @@ export function DeviceRow({ device }: DeviceRowProps) {
       <Button
         variant="outline"
         size="sm"
-        onClick={handleIdent}
+        onClick={(e) => { e.stopPropagation(); handleIdent() }}
         className="font-mono text-[10px] tracking-[2px] text-muted-foreground hover:text-primary hover:border-primary"
       >
         IDENT

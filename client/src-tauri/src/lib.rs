@@ -325,6 +325,15 @@ fn get_state(state: State<Arc<AppStateInner>>) -> AppState {
     AppState { port_name, devices }
 }
 
+#[tauri::command]
+fn set_can_id(old_can_id: u8, new_can_id: u8, state: State<Arc<AppStateInner>>) -> Result<(), String> {
+    let mut slot = state.client.lock().unwrap();
+    match slot.as_mut() {
+        Some(c) => c.send(old_can_id, CMD_SET_ID, &[new_can_id]).map_err(|e| e.to_string()),
+        None => Err("No device connected".into()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppStateInner {
@@ -338,7 +347,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(state)
-        .invoke_handler(tauri::generate_handler![identify, get_state])
+        .invoke_handler(tauri::generate_handler![identify, get_state, set_can_id])
         .setup(move |app| {
             let app_handle = app.handle().clone();
             start_background_workers(app_handle, state_clone);
