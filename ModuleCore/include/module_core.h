@@ -14,6 +14,7 @@
 #include <functional>
 #include <expected>
 #include "error.h"
+#include "log.h"
 
 #define CAN_NVS_KEY   "can_id"
 #define CAN_ID_UNSET  0xFF
@@ -90,7 +91,7 @@ private:
     struct OtaState {
         esp_ota_handle_t handle   = 0;
         bool             active   = false;
-        uint32_t         expected = 0; // total bytes
+        uint32_t         expected = 0;
         uint32_t         written  = 0;
     };
 
