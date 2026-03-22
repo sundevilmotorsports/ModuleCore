@@ -18,9 +18,33 @@
 
 #define CAN_NVS_KEY   "can_id"
 #define CAN_ID_UNSET  0xFF
-#define CAN_BROADCAST 0x7FF
+#define CAN_BROADCAST 0x1FFFFFFF
 
 #define OTA_CAN_CHUNK 5
+
+// ARB ID layout: [extra:13][cmd:8][target:8]
+// bits 0..7   = target device id (0xFF = broadcast)
+// bits 8..15  = command (Command enum)
+// bits 16..28 = extra (13 bits)
+
+static inline uint32_t  build_arb_id(uint8_t target, uint8_t cmd, uint32_t extra = 0) {
+    uint32_t e = extra & 0x1FFFu;
+    return (e << 16) | ((uint32_t)cmd << 8) | (uint32_t)target;
+}
+
+struct ParsedArbId {
+    uint8_t target;
+    uint8_t cmd;
+    uint32_t extra;
+};
+
+static inline ParsedArbId parse_arb_id(uint32_t arb) {
+    ParsedArbId p{};
+    p.target = static_cast<uint8_t>(arb & 0xFFu);
+    p.cmd = static_cast<uint8_t>((arb >> 8) & 0xFFu);
+    p.extra = (arb >> 16) & 0x1FFFu;
+    return p;
+}
 
 enum Command : uint8_t {
     CMD_IDENTIFY  = 0x01,
@@ -111,7 +135,8 @@ private:
     esp_err_t startDiscovery();
     void      identify();
     uint8_t   loadId();
-    uint8_t   getId() const { return can_id_; }
+
+    [[nodiscard]] uint8_t   getId() const { return can_id_; }
 
     esp_err_t otaBegin(uint32_t total_size);
     esp_err_t otaWrite(const uint8_t *data, size_t len, uint16_t seq, uint8_t src_id);
@@ -130,9 +155,9 @@ private:
     twai_node_handle_t twai_hdl_         = nullptr;
     uart_port_t        uart_port_        = UART_NUM_0;
     ModuleInfo         info_             = {};
-    Config             cfg_             = {};
+    Config             cfg_              = {};
     uint8_t            can_id_           = CAN_ID_UNSET;
     bool               discovery_active_ = false;
     QueueHandle_t      can_queue_        = nullptr;
-    OtaState           ota_             = {};
+    OtaState           ota_              = {};
 };

@@ -139,11 +139,13 @@ bool ModuleCore::onCanRxStatic(twai_node_handle_t handle, const twai_rx_done_eve
     auto *self = static_cast<ModuleCore*>(ctx);
 
     uint8_t recv_buff[8];
-    twai_frame_t rx_frame = { .buffer = recv_buff, .buffer_len = sizeof(recv_buff) };
+    twai_frame_t rx_frame = {};
+    rx_frame.buffer = recv_buff;
+    rx_frame.buffer_len = sizeof(recv_buff);
 
     if (twai_node_receive_from_isr(handle, &rx_frame) != ESP_OK) return false;
 
-    CanFrame cf;
+    CanFrame cf{};
     cf.header = rx_frame.header;
     cf.len    = rx_frame.header.dlc;
     memcpy(cf.data, rx_frame.buffer, cf.len);
@@ -154,7 +156,7 @@ bool ModuleCore::onCanRxStatic(twai_node_handle_t handle, const twai_rx_done_eve
 }
 
 void ModuleCore::canProcessTask() {
-    CanFrame frame;
+    CanFrame frame{};
     while (true) {
         if (!xQueueReceive(can_queue_, &frame, portMAX_DELAY)) continue;
         bool handled = handleCan(&frame);
@@ -163,64 +165,63 @@ void ModuleCore::canProcessTask() {
 }
 
 bool ModuleCore::handleCan(const CanFrame *frame) {
-    if (frame->len == 0) return true;
+    if (frame->header.ide == 0) return false;
 
-    if (frame->header.id == CAN_BROADCAST && frame->data[0] == CMD_DISCOVER) {
+    ParsedArbId parsed = parse_arb_id(frame->header.id);
+    uint8_t cmd = parsed.cmd;
+    uint8_t target = parsed.target;
+    const uint8_t *payload = frame->data;
+    size_t payload_len = frame->len;
+
+    if (cmd == CMD_DISCOVER && target == 0xFF) {
         vTaskDelay(pdMS_TO_TICKS(esp_random() % 50));
-        uint8_t resp[4] = { MSG_DISCOVERY, can_id_, info_.module_type, info_.fw_version };
-        sendCanFrame(can_id_, resp, 4);
+        uint8_t resp[3] = { can_id_, info_.module_type, info_.fw_version };
+        sendCanFrame(build_arb_id(0x00, MSG_DISCOVERY), resp, 3);
         return true;
     }
 
-    if (frame->data[0] == MSG_DISCOVERY && discovery_active_ && frame->len >= 4) {
+    if (cmd == MSG_DISCOVERY && discovery_active_ && payload_len >= 3) {
         UartResponse resp{};
         resp.msg_type      = MSG_DISCOVERY;
-        resp.source_device = frame->data[1];
-        resp.data[0]       = frame->data[2];
-        resp.data[1]       = frame->data[3];
+        resp.source_device = payload[0];
+        resp.data[0]       = payload[1];
+        resp.data[1]       = payload[2];
         resp.data_len      = 2;
         sendUartResponse(resp);
         return true;
     }
 
-    if (frame->header.id == can_id_) {
-        switch (static_cast<Command>(frame->data[0])) {
-            case CMD_OTA_BEGIN:
-                if (frame->len >= 5) {
-                    uint32_t sz = (uint32_t)frame->data[1]        | ((uint32_t)frame->data[2] << 8)
-                                | ((uint32_t)frame->data[3] << 16) | ((uint32_t)frame->data[4] << 24);
-                    otaBegin(sz);
-                }
-                return true;
-            case CMD_OTA_DATA:
-                if (frame->len >= 3) {
-                    uint16_t seq = (uint16_t)frame->data[1] | ((uint16_t)frame->data[2] << 8);
-                    otaWrite(&frame->data[3], frame->len - 3, seq, 0x00);
-                }
-                return true;
-            case CMD_OTA_END:
-                otaEnd(frame->len >= 2 && frame->data[1] == 0x00);
-                return true;
-            case CMD_DATA:
-                return false;
-            default:
-                break;
-        }
-    }
-
-    if (frame->header.id == can_id_ || frame->header.id == CAN_BROADCAST) {
-        switch (static_cast<Command>(frame->data[0])) {
+    if (target == can_id_ || target == 0xFF) {
+        switch (static_cast<Command>(cmd)) {
             case CMD_IDENTIFY:
                 identify();
                 return true;
             case CMD_SET_ID:
-                if (frame->len >= 2) setId(frame->data[1]);
+                if (payload_len >= 1) setId(payload[0]);
                 return true;
             case CMD_GET_INFO: {
-                uint8_t resp[4] = { MSG_RESPONSE, info_.module_type, info_.fw_version, can_id_ };
-                sendCanFrame(can_id_, resp, 4);
+                uint8_t resp_payload[3] = { info_.module_type, info_.fw_version, can_id_ };
+                sendCanFrame(build_arb_id(0x00, MSG_RESPONSE), resp_payload, 3);
                 return true;
             }
+            case CMD_OTA_BEGIN:
+                if (payload_len >= 4) {
+                    uint32_t sz = (uint32_t)payload[0]        | ((uint32_t)payload[1] << 8)
+                                | ((uint32_t)payload[2] << 16) | ((uint32_t)payload[3] << 24);
+                    otaBegin(sz);
+                }
+                return true;
+            case CMD_OTA_DATA:
+                if (payload_len >= 2) {
+                    uint16_t seq = (uint16_t)payload[0] | ((uint16_t)payload[1] << 8);
+                    otaWrite(&payload[2], payload_len - 2, seq, 0x00);
+                }
+                return true;
+            case CMD_OTA_END:
+                otaEnd(payload_len >= 1 && payload[0] == 0x00);
+                return true;
+            case CMD_DATA:
+                return false;
             default:
                 return false;
         }
@@ -303,15 +304,16 @@ esp_err_t ModuleCore::handleUart(const uint8_t *data, size_t len) {
         }
     }
 
-    // Forward to CAN node
     switch (static_cast<Command>(command)) {
         case CMD_OTA_BEGIN: {
-            uint8_t can_data[5] = { CMD_OTA_BEGIN,
-                                    (uint8_t)(payload_len > 0 ? payload[0] : 0),
-                                    (uint8_t)(payload_len > 1 ? payload[1] : 0),
-                                    (uint8_t)(payload_len > 2 ? payload[2] : 0),
-                                    (uint8_t)(payload_len > 3 ? payload[3] : 0) };
-            return sendCanFrame(target, can_data, 5);
+            uint8_t can_data[4] = {
+                (uint8_t)(payload_len > 0 ? payload[0] : 0),
+                (uint8_t)(payload_len > 1 ? payload[1] : 0),
+                (uint8_t)(payload_len > 2 ? payload[2] : 0),
+                (uint8_t)(payload_len > 3 ? payload[3] : 0)
+            };
+            uint8_t dest = (target == 0xFF) ? 0xFF : static_cast<uint8_t>(target);
+            return sendCanFrame(build_arb_id(dest, CMD_OTA_BEGIN), can_data, 4);
         }
         case CMD_OTA_DATA: {
             if (payload_len < 2) return ESP_ERR_INVALID_SIZE;
@@ -320,26 +322,28 @@ esp_err_t ModuleCore::handleUart(const uint8_t *data, size_t len) {
             size_t fwlen          = payload_len - 2;
             for (size_t offset = 0; offset < fwlen; offset += OTA_CAN_CHUNK) {
                 size_t chunk = std::min(fwlen - offset, (size_t)OTA_CAN_CHUNK);
-                uint8_t can_data[8] = { CMD_OTA_DATA, (uint8_t)(seq & 0xFF), (uint8_t)(seq >> 8) };
-                memcpy(&can_data[3], fwdata + offset, chunk);
-                esp_err_t err = sendCanFrame(target, can_data, 3 + chunk);
+                uint8_t can_data[8];
+                can_data[0] = (uint8_t)(seq & 0xFF);
+                can_data[1] = (uint8_t)(seq >> 8);
+                memcpy(&can_data[2], fwdata + offset, chunk);
+                uint8_t dest = (target == 0xFF) ? 0xFF : static_cast<uint8_t>(target);
+                esp_err_t err = sendCanFrame(build_arb_id(dest, CMD_OTA_DATA), can_data, 2 + chunk);
                 if (err != ESP_OK) return err;
                 seq++;
             }
             return ESP_OK;
         }
         case CMD_OTA_END: {
-            uint8_t can_data[2];
-            can_data[0] = CMD_OTA_END;
-            can_data[1] = payload_len >= 1 ? payload[0] : 0x00;
-            return sendCanFrame(target, can_data, 2);
+            uint8_t can_data[1];
+            can_data[0] = payload_len >= 1 ? payload[0] : 0x00;
+            uint8_t dest = (target == 0xFF) ? 0xFF : static_cast<uint8_t>(target);
+            return sendCanFrame(build_arb_id(dest, CMD_OTA_END), can_data, 1);
         }
         default: {
-            uint32_t target_id = (target == 0xFF) ? CAN_BROADCAST : target;
             uint8_t can_data[8];
-            can_data[0] = command;
-            memcpy(&can_data[1], payload, payload_len);
-            return sendCanFrame(target_id, can_data, payload_len + 1);
+            memcpy(can_data, payload, payload_len);
+            uint8_t dest = (target == 0xFF) ? 0xFF : static_cast<uint8_t>(target);
+            return sendCanFrame(build_arb_id(dest, static_cast<uint8_t>(command)), can_data, payload_len);
         }
     }
 }
@@ -355,11 +359,14 @@ esp_err_t ModuleCore::sendUartResponse(const UartResponse &resp) {
 
 esp_err_t ModuleCore::sendCanFrame(uint32_t can_id, const uint8_t *data, size_t len) {
     uint8_t tx_buff[8];
-    memcpy(tx_buff, data, len);
+    if (len > sizeof(tx_buff)) len = sizeof(tx_buff);
+    if (data != nullptr && len > 0) {
+        memcpy(tx_buff, data, len);
+    }
 
     twai_frame_t frame = {};
     frame.header.id  = can_id;
-    frame.header.ide = (can_id > 0x7FF) ? 1 : 0;
+    frame.header.ide = 1;
     frame.header.dlc = len;
     frame.buffer     = tx_buff;
     frame.buffer_len = sizeof(tx_buff);
@@ -370,12 +377,13 @@ esp_err_t ModuleCore::sendCanFrame(uint32_t can_id, const uint8_t *data, size_t 
 esp_err_t ModuleCore::transmitCan(uint32_t can_id, const uint8_t *data, size_t len) {
     uint8_t tx_buff[8];
     tx_buff[0] = CMD_DATA;
-    memcpy(&tx_buff[1], data, len);
+    if (len > sizeof(tx_buff) - 1) len = sizeof(tx_buff) - 1;
+    if (data != nullptr && len > 0) memcpy(&tx_buff[1], data, len);
 
     twai_frame_t frame = {};
     frame.header.id  = can_id;
-    frame.header.ide = (can_id > 0x7FF) ? 1 : 0;
-    frame.header.dlc = len;
+    frame.header.ide = 1;
+    frame.header.dlc = static_cast<uint8_t>(len + 1);
     frame.buffer     = tx_buff;
     frame.buffer_len = sizeof(tx_buff);
 
@@ -398,8 +406,7 @@ esp_err_t ModuleCore::startDiscovery() {
     discovery_active_ = true;
     uint8_t uart_buf[4] = { MSG_DISCOVERY, can_id_, info_.module_type, info_.fw_version };
     uart_write_bytes(uart_port_, uart_buf, 4);
-    uint8_t can_data[1] = { CMD_DISCOVER };
-    sendCanFrame(CAN_BROADCAST, can_data, 1);
+    sendCanFrame(build_arb_id(0xFF, CMD_DISCOVER), nullptr, 0);
     spawnTask<&ModuleCore::discoveryTask>("discovery", 2048, 5);
     return ESP_OK;
 }
