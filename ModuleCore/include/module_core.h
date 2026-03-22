@@ -27,7 +27,7 @@
 // bits 8..15  = command (Command enum)
 // bits 16..28 = extra (13 bits)
 
-static inline uint32_t  build_arb_id(uint8_t target, uint8_t cmd, uint32_t extra = 0) {
+static inline uint32_t build_arb_id(uint8_t target, uint8_t cmd, uint32_t extra = 0) {
     uint32_t e = extra & 0x1FFFu;
     return (e << 16) | ((uint32_t)cmd << 8) | (uint32_t)target;
 }
@@ -151,6 +151,9 @@ private:
 
     static bool onCanRxStatic(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *ctx);
     static void uartRxTaskEntry(void *arg);
+
+    static esp_err_t init_gpio(gpio_num_t pin);
+    static esp_err_t init_nvs();
 
     twai_node_handle_t twai_hdl_         = nullptr;
     uart_port_t        uart_port_        = UART_NUM_0;

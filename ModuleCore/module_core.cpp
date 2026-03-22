@@ -6,6 +6,8 @@
 #include "nvs.h"
 #include <cstring>
 
+#include "nvs_flash.h"
+
 static const char *TAG = "ModuleCore";
 
 ModuleCore::~ModuleCore() {
@@ -18,6 +20,9 @@ ModuleCore::~ModuleCore() {
 }
 
 esp_err_t ModuleCore::init(const ModuleInfo &info, const Config &cfg) {
+    ESP_RETURN_ON_ERROR(init_nvs(), TAG, "Failed to initialize NVS");
+    ESP_RETURN_ON_ERROR(init_gpio(info.blink_pin), TAG, "Failed to initialize led gpio");
+
     info_      = info;
     cfg_       = cfg;
     uart_port_ = cfg.uart_port;
@@ -63,6 +68,25 @@ esp_err_t ModuleCore::init(const ModuleInfo &info, const Config &cfg) {
         spawnTask<&ModuleCore::appSupervisorTask>("app_sup", 8192, 5);
     }
 
+    return ESP_OK;
+}
+
+esp_err_t ModuleCore::init_nvs() {
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_RETURN_ON_ERROR(nvs_flash_erase(), TAG, "NVS erase failed");
+        err = nvs_flash_init();
+    }
+    return err;
+}
+
+esp_err_t ModuleCore::init_gpio(gpio_num_t pin) {
+    gpio_config_t io_cfg = {};
+    io_cfg.pin_bit_mask = (1ULL << pin);
+    io_cfg.mode         = GPIO_MODE_OUTPUT;
+    io_cfg.intr_type    = GPIO_INTR_DISABLE;
+    ESP_RETURN_ON_ERROR(gpio_config(&io_cfg), TAG, "GPIO config failed");
+    gpio_set_level(pin, 0);
     return ESP_OK;
 }
 
@@ -376,12 +400,11 @@ esp_err_t ModuleCore::sendCanFrame(uint32_t can_id, const uint8_t *data, size_t 
 
 esp_err_t ModuleCore::transmitCan(uint32_t can_id, const uint8_t *data, size_t len) {
     uint8_t tx_buff[8];
-    tx_buff[0] = CMD_DATA;
-    if (len > sizeof(tx_buff) - 1) len = sizeof(tx_buff) - 1;
-    if (data != nullptr && len > 0) memcpy(&tx_buff[1], data, len);
+    if (len > sizeof(tx_buff)) len = sizeof(tx_buff);
+    if (data != nullptr && len > 0) memcpy(&tx_buff, data, len);
 
     twai_frame_t frame = {};
-    frame.header.id  = can_id;
+    frame.header.id  = build_arb_id(can_id, CMD_DATA);
     frame.header.ide = 1;
     frame.header.dlc = static_cast<uint8_t>(len + 1);
     frame.buffer     = tx_buff;

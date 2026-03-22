@@ -11,11 +11,11 @@
 class ModuleCoreLogger {
 public:
     enum LogLevel {
-        Debug = 0,
-        Info = 1,
-        Warn = 2,
-        Error = 3,
-        None = 4,
+        None  = 0,
+        Debug = 1,
+        Info  = 2,
+        Warn  = 3,
+        Error = 4,
     };
 
     static ModuleCoreLogger & instance() {
@@ -72,6 +72,9 @@ private:
 
     template<typename... Args>
     void formatAndLog(LogLevel lvl, const char *fmt, Args... args) {
+        if (level_.load() < lvl)
+            return;
+
         char buf[512];
         int n = std::snprintf(buf, sizeof(buf), fmt, args...);
         if (n < 0) return;
