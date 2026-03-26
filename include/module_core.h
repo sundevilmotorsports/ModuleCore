@@ -22,28 +22,21 @@
 
 #define OTA_CAN_CHUNK 5
 
-// ARB ID layout: [extra:13][cmd:8][target:8]
-// bits 0..7   = target device id (0xFF = broadcast)
-// bits 8..15  = command (Command enum)
-// bits 16..28 = extra (13 bits)
+// ARB ID layout: [extra:5][source:8][cmd:8][target:8]
 
-static inline uint32_t build_arb_id(uint8_t target, uint8_t cmd, uint32_t extra = 0) {
-    uint32_t e = extra & 0x1FFFu;
-    return (e << 16) | ((uint32_t)cmd << 8) | (uint32_t)target;
+static inline uint32_t build_arb_id(uint8_t target, uint8_t cmd, uint8_t source, uint32_t extra = 0) {
+    return ((uint32_t)(extra & 0x1F) << 24) | ((uint32_t)source << 16) | ((uint32_t)cmd << 8) | target;
 }
 
 struct ParsedArbId {
-    uint8_t target;
-    uint8_t cmd;
+    uint8_t  target;
+    uint8_t  cmd;
+    uint8_t  source;
     uint32_t extra;
 };
 
 static inline ParsedArbId parse_arb_id(uint32_t arb) {
-    ParsedArbId p{};
-    p.target = static_cast<uint8_t>(arb & 0xFFu);
-    p.cmd = static_cast<uint8_t>((arb >> 8) & 0xFFu);
-    p.extra = (arb >> 16) & 0x1FFFu;
-    return p;
+    return { (uint8_t)(arb & 0xFF), (uint8_t)((arb >> 8) & 0xFF), (uint8_t)((arb >> 16) & 0xFF), (arb >> 24) & 0x1F };
 }
 
 enum Command : uint8_t {
