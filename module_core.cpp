@@ -200,7 +200,7 @@ bool ModuleCore::handleCan(const CanFrame *frame) {
     if (cmd == CMD_DISCOVER && target == 0xFF) {
         vTaskDelay(pdMS_TO_TICKS(esp_random() % 50));
         uint8_t resp[3] = { can_id_, info_.module_type, info_.fw_version };
-        sendCanFrame(build_arb_id(0x00, MSG_DISCOVERY), resp, 3);
+        sendCanFrame(build_arb_id(0x00, MSG_DISCOVERY, this->can_id_), resp, 3);
         return true;
     }
 
@@ -225,7 +225,7 @@ bool ModuleCore::handleCan(const CanFrame *frame) {
                 return true;
             case CMD_GET_INFO: {
                 uint8_t resp_payload[3] = { info_.module_type, info_.fw_version, can_id_ };
-                sendCanFrame(build_arb_id(0x00, MSG_RESPONSE), resp_payload, 3);
+                sendCanFrame(build_arb_id(0x00, MSG_RESPONSE, this->can_id_), resp_payload, 3);
                 return true;
             }
             case CMD_OTA_BEGIN:
@@ -337,7 +337,7 @@ esp_err_t ModuleCore::handleUart(const uint8_t *data, size_t len) {
                 (uint8_t)(payload_len > 3 ? payload[3] : 0)
             };
             uint8_t dest = (target == 0xFF) ? 0xFF : static_cast<uint8_t>(target);
-            return sendCanFrame(build_arb_id(dest, CMD_OTA_BEGIN), can_data, 4);
+            return sendCanFrame(build_arb_id(dest, CMD_OTA_BEGIN, this->can_id_), can_data, 4);
         }
         case CMD_OTA_DATA: {
             if (payload_len < 2) return ESP_ERR_INVALID_SIZE;
@@ -351,7 +351,7 @@ esp_err_t ModuleCore::handleUart(const uint8_t *data, size_t len) {
                 can_data[1] = (uint8_t)(seq >> 8);
                 memcpy(&can_data[2], fwdata + offset, chunk);
                 uint8_t dest = (target == 0xFF) ? 0xFF : static_cast<uint8_t>(target);
-                esp_err_t err = sendCanFrame(build_arb_id(dest, CMD_OTA_DATA), can_data, 2 + chunk);
+                esp_err_t err = sendCanFrame(build_arb_id(dest, CMD_OTA_DATA, this->can_id_), can_data, 2 + chunk);
                 if (err != ESP_OK) return err;
                 seq++;
             }
@@ -361,13 +361,13 @@ esp_err_t ModuleCore::handleUart(const uint8_t *data, size_t len) {
             uint8_t can_data[1];
             can_data[0] = payload_len >= 1 ? payload[0] : 0x00;
             uint8_t dest = (target == 0xFF) ? 0xFF : static_cast<uint8_t>(target);
-            return sendCanFrame(build_arb_id(dest, CMD_OTA_END), can_data, 1);
+            return sendCanFrame(build_arb_id(dest, CMD_OTA_END, this->can_id_), can_data, 1);
         }
         default: {
             uint8_t can_data[8];
             memcpy(can_data, payload, payload_len);
             uint8_t dest = (target == 0xFF) ? 0xFF : static_cast<uint8_t>(target);
-            return sendCanFrame(build_arb_id(dest, static_cast<uint8_t>(command)), can_data, payload_len);
+            return sendCanFrame(build_arb_id(dest, static_cast<uint8_t>(command), this->can_id_), can_data, payload_len);
         }
     }
 }
@@ -404,7 +404,7 @@ esp_err_t ModuleCore::transmitCan(uint32_t can_id, const uint8_t *data, size_t l
     if (data != nullptr && len > 0) memcpy(&tx_buff, data, len);
 
     twai_frame_t frame = {};
-    frame.header.id  = build_arb_id(can_id, CMD_DATA);
+    frame.header.id  = build_arb_id(can_id, CMD_DATA, this->can_id_);
     frame.header.ide = 1;
     frame.header.dlc = static_cast<uint8_t>(len + 1);
     frame.buffer     = tx_buff;
@@ -429,7 +429,7 @@ esp_err_t ModuleCore::startDiscovery() {
     discovery_active_ = true;
     uint8_t uart_buf[4] = { MSG_DISCOVERY, can_id_, info_.module_type, info_.fw_version };
     uart_write_bytes(uart_port_, uart_buf, 4);
-    sendCanFrame(build_arb_id(0xFF, CMD_DISCOVER), nullptr, 0);
+    sendCanFrame(build_arb_id(0xFF, CMD_DISCOVER, this->can_id_), nullptr, 0);
     spawnTask<&ModuleCore::discoveryTask>("discovery", 2048, 5);
     return ESP_OK;
 }
