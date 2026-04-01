@@ -281,6 +281,10 @@ esp_err_t ModuleCore::handleUart(const uint8_t *data, size_t len) {
     const uint8_t  *payload     = data + 2;
     size_t          payload_len = (len > 2) ? len - 2 : 0;
 
+    if (target > 0x50) {
+        return ESP_FAIL; // Anything over 0x50 is user commands
+    }
+
     if (target == 0x00 || target == can_id_) {
         if (static_cast<Command>(command) == CMD_DISCOVER)
             return startDiscovery();
