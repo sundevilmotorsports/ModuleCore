@@ -377,12 +377,13 @@ esp_err_t ModuleCore::handleUart(const uint8_t *data, size_t len) {
 }
 
 esp_err_t ModuleCore::sendUartResponse(const UartResponse &resp) {
-    uint8_t buffer[8];
-    buffer[0] = static_cast<uint8_t>(resp.msg_type);
-    buffer[1] = resp.source_device;
-    memcpy(&buffer[2], resp.data, resp.data_len);
-    int written = uart_write_bytes(uart_port_, buffer, 2 + resp.data_len);
-    return (written == static_cast<int>(2 + resp.data_len)) ? ESP_OK : ESP_FAIL;
+    uint8_t header[2] = { static_cast<uint8_t>(resp.msg_type), resp.source_device };
+    uart_write_bytes(uart_port_, header, sizeof(header));
+    if (resp.data != nullptr && resp.data_len > 0) {
+        int written = uart_write_bytes(uart_port_, resp.data, resp.data_len);
+        if (written != static_cast<int>(resp.data_len)) return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 esp_err_t ModuleCore::sendCanFrame(uint32_t can_id, const uint8_t *data, size_t len) {

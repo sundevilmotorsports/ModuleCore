@@ -83,11 +83,21 @@ public:
         std::function<std::expected<void, ModuleCoreError>()> app_main = nullptr;
     };
 
+    struct UartResponse {
+        uint8_t msg_type;
+        uint8_t source_device;
+        uint8_t *data;
+        size_t  data_len;
+    };
+
     ModuleCore() = default;
     ~ModuleCore();
 
+    uint8_t getId() const { return can_id_; }
+
     esp_err_t init(const ModuleInfo &info, const Config &cfg);
     esp_err_t transmitCan(uint32_t can_id, const uint8_t *data, size_t len);
+    esp_err_t sendUartResponse(const UartResponse &resp);
 
 private:
     struct UartMessage {
@@ -95,13 +105,6 @@ private:
         uint8_t command;
         uint8_t payload[6];
         size_t  payload_len;
-    };
-
-    struct UartResponse {
-        MsgType msg_type;
-        uint8_t source_device;
-        uint8_t data[6];
-        size_t  data_len;
     };
 
     // OTA state — one active session at a time
@@ -123,13 +126,10 @@ private:
     esp_err_t sendCanFrame(uint32_t can_id, const uint8_t *data, size_t len);
     esp_err_t handleUart(const uint8_t *data, size_t len);
     bool      handleCan(const CanFrame *frame);
-    esp_err_t sendUartResponse(const UartResponse &resp);
     esp_err_t setId(uint8_t id);
     esp_err_t startDiscovery();
     void      identify();
     uint8_t   loadId();
-
-    [[nodiscard]] uint8_t   getId() const { return can_id_; }
 
     esp_err_t otaBegin(uint32_t total_size);
     esp_err_t otaWrite(const uint8_t *data, size_t len, uint16_t seq, uint8_t src_id);
