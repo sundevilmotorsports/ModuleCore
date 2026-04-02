@@ -65,7 +65,7 @@ esp_err_t ModuleCore::init(const ModuleInfo &info, const Config &cfg) {
     ESP_LOGI(TAG, "Ready — CAN ID: 0x%02X", can_id_);
 
     if (cfg_.app_main) {
-        spawnTask<&ModuleCore::appSupervisorTask>("app_sup", 8192, 5);
+        spawnTask<&ModuleCore::appSupervisorTask>("app_sup", 8192 * 4, 5);
     }
 
     return ESP_OK;
