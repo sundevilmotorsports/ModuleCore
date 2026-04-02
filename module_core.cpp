@@ -95,14 +95,14 @@ esp_err_t ModuleCore::otaBegin(uint32_t total_size) {
 
     const esp_partition_t *part = esp_ota_get_next_update_partition(nullptr);
     if (!part) {
-        uint8_t nack[4] = { MSG_OTA_ACK, can_id_, 0xFF, 0xFF };
+        uint8_t nack[6] = { MSG_OTA_ACK, can_id_, 2, 0, 0xFF, 0xFF };
         uart_write_bytes(uart_port_, nack, sizeof(nack));
         return ESP_ERR_NOT_FOUND;
     }
 
     esp_err_t err = esp_ota_begin(part, total_size, &ota_.handle);
     if (err != ESP_OK) {
-        uint8_t nack[4] = { MSG_OTA_ACK, can_id_, 0xFF, 0xFF };
+        uint8_t nack[6] = { MSG_OTA_ACK, can_id_, 2, 0, 0xFF, 0xFF };
         uart_write_bytes(uart_port_, nack, sizeof(nack));
         return err;
     }
@@ -113,7 +113,7 @@ esp_err_t ModuleCore::otaBegin(uint32_t total_size) {
 
     esp_log_level_set("*", ESP_LOG_NONE);
 
-    uint8_t ack[4] = { MSG_OTA_ACK, can_id_, 0xFE, 0xFF };
+    uint8_t ack[6] = { MSG_OTA_ACK, can_id_, 2, 0, 0xFE, 0xFF };
     uart_write_bytes(uart_port_, ack, sizeof(ack));
     return ESP_OK;
 }
@@ -128,7 +128,7 @@ esp_err_t ModuleCore::otaWrite(const uint8_t *data, size_t len, uint16_t seq, ui
     }
     ota_.written += len;
 
-    uint8_t ack[4] = { MSG_OTA_ACK, src_id, (uint8_t)(seq & 0xFF), (uint8_t)(seq >> 8) };
+    uint8_t ack[6] = { MSG_OTA_ACK, src_id, 2, 0, (uint8_t)(seq & 0xFF), (uint8_t)(seq >> 8) };
     uart_write_bytes(uart_port_, ack, sizeof(ack));
     return ESP_OK;
 }
@@ -377,7 +377,13 @@ esp_err_t ModuleCore::handleUart(const uint8_t *data, size_t len) {
 }
 
 esp_err_t ModuleCore::sendUartResponse(const UartResponse &resp) {
-    uint8_t header[2] = { static_cast<uint8_t>(resp.msg_type), resp.source_device };
+    uint16_t data_len = static_cast<uint16_t>(resp.data_len);
+    uint8_t header[4] = {
+        static_cast<uint8_t>(resp.msg_type),
+        resp.source_device,
+        static_cast<uint8_t>(data_len & 0xFF),
+        static_cast<uint8_t>(data_len >> 8),
+    };
     uart_write_bytes(uart_port_, header, sizeof(header));
     if (resp.data != nullptr && resp.data_len > 0) {
         int written = uart_write_bytes(uart_port_, resp.data, resp.data_len);
@@ -432,8 +438,8 @@ esp_err_t ModuleCore::setId(uint8_t id) {
 
 esp_err_t ModuleCore::startDiscovery() {
     discovery_active_ = true;
-    uint8_t uart_buf[4] = { MSG_DISCOVERY, can_id_, info_.module_type, info_.fw_version };
-    uart_write_bytes(uart_port_, uart_buf, 4);
+    uint8_t uart_buf[6] = { MSG_DISCOVERY, can_id_, 2, 0, info_.module_type, info_.fw_version };
+    uart_write_bytes(uart_port_, uart_buf, 6);
     sendCanFrame(build_arb_id(0xFF, CMD_DISCOVER, this->can_id_), nullptr, 0);
     spawnTask<&ModuleCore::discoveryTask>("discovery", 2048, 5);
     return ESP_OK;
